@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 using Redshift.Services;
+namespace Redshift;
 namespace Redshift;
 public partial class MainWindow:Window {
  readonly BluestacksService bs=new(); SettingsStore settings=new(); TextBlock status=new(); AndroidManager AndroidApi=>new(new AdbClient(settings.AdbPath)); string? selectedDevice;
