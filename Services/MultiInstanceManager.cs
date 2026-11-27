@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 namespace Redshift.Services;
 public sealed record EmulatorInstance(string Name,string? Arguments,bool Running,int? ProcessId);
 public sealed class MultiInstanceManager {
