@@ -1,3 +1,4 @@
+using System.IO;
 namespace Redshift.Services;
 public sealed class AndroidManager(IAdbClient adb) {
     public async Task<IReadOnlyList<string>> ListDevicesAsync(CancellationToken ct=default){var r=await adb.ExecuteAsync("devices",ct);if(!r.Success)return [];return r.Output.Split('\n',StringSplitOptions.RemoveEmptyEntries).Skip(1).Select(x=>x.Trim().Split('\t')).Where(x=>x.Length>1&&x[1]=="device").Select(x=>x[0]).ToArray();}
