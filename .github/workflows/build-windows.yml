@@ -1,0 +1,27 @@
+name: Build REDSHIFT Windows
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore REDSHIFT.csproj
+      - name: Build
+        run: dotnet build REDSHIFT.csproj --configuration Release --no-restore
+      - name: Static smoke test
+        shell: pwsh
+        run: ./smoke-test.ps1
+      - name: Publish Windows EXE
+        run: dotnet publish REDSHIFT.csproj --configuration Release --runtime win-x64 --self-contained true --output publish
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDSHIFT-BlueStacks-win-x64
+          path: publish/
