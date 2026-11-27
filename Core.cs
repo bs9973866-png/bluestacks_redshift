@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using Redshift.Services;
 namespace Redshift;
 public sealed class SettingsStore {
     private readonly string file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "REDSHIFT", "settings.json");
