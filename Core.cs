@@ -1,0 +1,30 @@
+using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+namespace Redshift;
+public sealed class SettingsStore {
+    private readonly string file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "REDSHIFT", "settings.json");
+    public List<GameProfile> Profiles { get; set; } = new ProfileCatalog().StandoffProfiles.ToList();
+    public string? BlueStacksPath { get; set; }
+    public string? AdbPath { get; set; }
+    public bool AutoProfiles { get; set; } = true;
+    public ScalingSettings Scaling { get; set; } = new("Stretched 4:3", 1.0, 1.0, true);
+    public List<string> FavoritePackages { get; set; } = [];
+    public OverlaySettings Overlay { get; set; } = new();
+    public Dictionary<string,string> PackageProfiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public async Task SaveAsync(){Directory.CreateDirectory(Path.GetDirectoryName(file)!); await File.WriteAllTextAsync(file,JsonSerializer.Serialize(this,new JsonSerializerOptions{WriteIndented=true}));}
+    public async Task ExportProfilesAsync(string path){await File.WriteAllTextAsync(path,JsonSerializer.Serialize(Profiles,new JsonSerializerOptions{WriteIndented=true}));}
+    public async Task<(bool Success,string Message)> ImportProfilesAsync(string path){try{var incoming=JsonSerializer.Deserialize<List<GameProfile>>(await File.ReadAllTextAsync(path));if(incoming==null||incoming.Count==0)return(false,"No profiles found in the selected file.");var names=new HashSet<string>(Profiles.Select(p=>p.Name),StringComparer.OrdinalIgnoreCase);foreach(var p in incoming){var validation=BluestacksService.ValidateProfile(p);if(!validation.StartsWith("supported"))return(false,$"Profile '{p.Name}' failed validation: {validation}");if(string.IsNullOrWhiteSpace(p.Name)||!names.Add(p.Name))return(false,$"Empty or duplicate profile name: {p.Name}");}Profiles.AddRange(incoming);await SaveAsync();return(true,$"Imported {incoming.Count} profiles.");}catch(Exception ex){return(false,"Import failed: "+ex.Message);}}
+    public bool TryAddProfile(GameProfile profile,out string error){error=BluestacksService.ValidateProfile(profile);if(!error.StartsWith("valid"))return false;if(Profiles.Any(x=>string.Equals(x.Name,profile.Name,StringComparison.OrdinalIgnoreCase))){error="profile name already exists";return false;}Profiles.Add(profile);error="profile saved";return true;}
+    public async Task<string> BackupAsync(){var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop),"REDSHIFT-Backups",DateTime.Now.ToString("yyyyMMdd-HHmmss"));Directory.CreateDirectory(dir);await File.WriteAllTextAsync(Path.Combine(dir,"settings.json"),JsonSerializer.Serialize(this,new JsonSerializerOptions{WriteIndented=true}));return dir;}
+    public async Task RestoreAsync(string source){var restored=JsonSerializer.Deserialize<SettingsStore>(await File.ReadAllTextAsync(source));if(restored==null)throw new InvalidDataException("Backup file is invalid.");Profiles=restored.Profiles;BlueStacksPath=restored.BlueStacksPath;AdbPath=restored.AdbPath;AutoProfiles=restored.AutoProfiles;Scaling=restored.Scaling;await SaveAsync();}
+    public static async Task<SettingsStore> LoadAsync(){var s=new SettingsStore(); if(File.Exists(s.file)) try{return JsonSerializer.Deserialize<SettingsStore>(await File.ReadAllTextAsync(s.file))??s;}catch{} return s;}
+}
+public sealed class BluestacksService {
+    public static string ParseDevices(string output){var rows=output.Split('\n',StringSplitOptions.RemoveEmptyEntries).Where(x=>!x.StartsWith("List of devices"));if(!rows.Any())return "No Android devices connected.";return string.Join("\n",rows.Select(x=>{var p=x.Trim().Split('\t');return p.Length>1?$"Device {p[0]}: {p[1]}":x.Trim();}));}
+    public static string ProcessMetrics(){var ps=Process.GetProcessesByName("HD-Player");if(ps.Length==0)return "BlueStacks process is not running; FPS/GPU metrics unavailable.";var lines=ps.Select(p=>{try{return $"PID {p.Id}: RAM {p.WorkingSet64/1024/1024} MB";}catch{return $"PID {p.Id}: metrics unavailable";}});return string.Join("\n",lines);}
+    public static string ValidateScaling(ScalingSettings s){if(s.Horizontal<0.5||s.Horizontal>3||s.Vertical<0.5||s.Vertical>3)return "scaling must be between 50% and 300%";if(s.Mode is not ("Stretched 4:3" or "Stretched 16:9" or "Original Aspect Ratio" or "Custom Scaling"))return "unknown scaling mode";if(s.Mode=="Original Aspect Ratio"&&Math.Abs(s.Horizontal-s.Vertical)>0.001)return "original aspect ratio requires equal scaling";return "valid; application requires a supported BlueStacks display path";}
+    public string? Locate(string? configured=null){var candidates=new[]{configured,Environment.GetEnvironmentVariable("PROGRAMFILES")+"\\BlueStacks_nxt\\HD-Player.exe",Environment.GetEnvironmentVariable("PROGRAMFILES")+"\\BlueStacks\\HD-Player.exe"}; return candidates.FirstOrDefault(p=>!string.IsNullOrWhiteSpace(p)&&File.Exists(p));}
+    public async Task<(bool ok,string output)> RunAdbAsync(string args,string? adbPath=null){try{var p=new Process{StartInfo=new ProcessStartInfo(string.IsNullOrWhiteSpace(adbPath)?"adb":adbPath,args){RedirectStandardOutput=true,RedirectStandardError=true,UseShellExecute=false,CreateNoWindow=true}};p.Start(); var o=await p.StandardOutput.ReadToEndAsync(); var e=await p.StandardError.ReadToEndAsync(); await p.WaitForExitAsync(); return (p.ExitCode==0,o+e);}catch(Exception ex){return(false,ex.Message);}}
+    public static string ValidateProfile(GameProfile p){if(p.Width<320||p.Height<240)return "resolution too small";if(p.Dpi<80||p.Dpi>640)return "DPI outside safe range";if(p.Fps is not (30 or 60 or 90 or 120 or 144 or 165 or 240))return "FPS mode is not in supported presets";if(p.Aspect=="4:3"&&Math.Abs((double)p.Width/p.Height-4.0/3)>0.02)return "resolution does not match 4:3";if(p.Aspect=="16:9"&&Math.Abs((double)p.Width/p.Height-16.0/9)>0.02)return "resolution does not match 16:9";return "supported by REDSHIFT rules; BlueStacks still needs runtime verification";}
+}

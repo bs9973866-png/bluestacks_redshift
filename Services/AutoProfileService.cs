@@ -1,0 +1,7 @@
+namespace Redshift.Services;
+public sealed class AutoProfileService(IAdbClient adb) {
+ public async Task<(bool Success,string? Size,string? Density,string Error)> ReadDisplayAsync(string? serial=null,CancellationToken ct=default){var prefix=string.IsNullOrWhiteSpace(serial)?"":$"-s {serial} ";var size=await adb.ExecuteAsync(prefix+"shell wm size",ct);var dpi=await adb.ExecuteAsync(prefix+"shell wm density",ct);var sv=Extract(size.Output);var dv=Extract(dpi.Output);var ok=size.Success&&dpi.Success&&sv!=null&&dv!=null;return(ok,sv,dv,ok?"":size.Output+"\n"+dpi.Output);}
+ static string? Extract(string text)=>text.Split('\n').Select(x=>x.Trim()).LastOrDefault(x=>x.StartsWith("Physical size:")||x.StartsWith("Override size:")||x.StartsWith("Physical density:")||x.StartsWith("Override density:"))?.Split(':',2).Last().Trim();
+ public async Task<string?> GetForegroundPackageAsync(CancellationToken ct=default){var r=await adb.ExecuteAsync("shell dumpsys window windows",ct);if(!r.Success)return null;foreach(var line in r.Output.Split('\n')){var marker=line.IndexOf("mCurrentFocus",StringComparison.Ordinal);if(marker<0)continue;var parts=line[(marker)..].Split(' ',StringSplitOptions.RemoveEmptyEntries);var token=parts.FirstOrDefault(x=>x.Contains('/'));if(token==null)continue;return token.Split('/')[0].TrimEnd('}');}return null;}
+ public GameProfile? FindProfile(string? packageName,IReadOnlyDictionary<string,GameProfile> mappings){return packageName!=null&&mappings.TryGetValue(packageName,out var p)?p:null;}
+}
